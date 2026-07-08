@@ -78,18 +78,22 @@ do {
     }
 }
 
-// Slice 5: upgrade script content runs brew update && brew upgrade and stays open
+// Slice 5: upgrade script chains brew update && brew upgrade, signals completion, and closes its terminal window
 do {
     let launcher = UpgradeLauncher(brewPath: "/opt/homebrew/bin/brew")
-    let script = launcher.makeUpgradeScript()
+    let script = launcher.makeUpgradeScript(sentinelPath: "/tmp/sentinel.done")
 
     checklist.check(
         "upgrade script chains brew update && brew upgrade",
         script.contains("/opt/homebrew/bin/brew update && /opt/homebrew/bin/brew upgrade")
     )
     checklist.check(
-        "upgrade script keeps the window open after finishing",
-        script.contains("read")
+        "upgrade script touches the sentinel file when done",
+        script.contains("touch '/tmp/sentinel.done'")
+    )
+    checklist.check(
+        "upgrade script closes its Terminal window on completion",
+        script.contains("tell application \"Terminal\" to close")
     )
 }
 

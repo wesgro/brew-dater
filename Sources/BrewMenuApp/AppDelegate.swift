@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let checkInterval: TimeInterval = 6 * 60 * 60
     private var timer: Timer?
+    private var upgradeWatchTimer: Timer?
 
     private lazy var statusMenuItem = NSMenuItem(title: "Checking…", action: nil, keyEquivalent: "")
 
@@ -76,14 +77,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(statusMenuItem)
         menu.addItem(.separator())
 
-        menu.addItem(NSMenuItem(title: "Upgrade Now", action: #selector(upgradeNow), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "Check Now", action: #selector(checkNow), keyEquivalent: ""))
-        menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        let upgradeItem = NSMenuItem(title: "Upgrade Now", action: #selector(upgradeNow), keyEquivalent: "")
+        upgradeItem.target = self
+        menu.addItem(upgradeItem)
 
-        for item in menu.items {
-            item.target = self
-        }
+        let checkItem = NSMenuItem(title: "Check Now", action: #selector(checkNow), keyEquivalent: "")
+        checkItem.target = self
+        menu.addItem(checkItem)
+
+        menu.addItem(.separator())
+
+        let quitItem = NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        quitItem.target = NSApp
+        menu.addItem(quitItem)
+
         statusItem.menu = menu
     }
 
@@ -92,7 +99,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func upgradeNow() {
-        try? upgradeLauncher.launch()
+        guard let sentinelURL = try? upgradeLauncher.launch() else { return }
+        watchForUpgradeCompletion(at: sentinelURL)
+    }
+
+    /// Polls for the sentinel file the upgrade script touches when brew finishes,
+    /// then re-checks status so the icon reflects the real post-upgrade state.
+    private func watchForUpgradeCompletion(at sentinelURL: URL) {
+        upgradeWatchTimer?.invalidate()
+        upgradeWatchTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, FileManager.default.fileExists(atPath: sentinelURL.path) else { return }
+                self.upgradeWatchTimer?.invalidate()
+                try? FileManager.default.removeItem(at: sentinelURL)
+                self.refresh()
+            }
+        }
     }
 
     private func refresh() {
